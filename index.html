@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<title>Star Drifter</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#202124;--fg:#acacac}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:"Press Start 2P","Courier New",monospace}
+body{display:flex;flex-direction:column;align-items:center;justify-content:center}
+canvas{width:min(96vw,calc(88vh*16/9));border:2px solid var(--fg);background:#202124;touch-action:none}
+p{font-size:9px;line-height:1.6;margin:8px 0 0;letter-spacing:1px;text-align:center}
+</style></head><body>
+<canvas id="c" width="1280" height="720"></canvas>
+<p>SPACE / CLICK = JUMP &middot; TAP REPEATEDLY FOR A HIGHER JUMP</p>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+try{document.fonts.load('8px "Press Start 2P"')}catch(e){}
+const PAL={'#000':'#202124','#fff':'#acacac'};
+for(const p of ['fillStyle','strokeStyle']){const d=Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype,p);
+  Object.defineProperty(ctx,p,{get(){return d.get.call(this)},set(v){d.set.call(this,PAL[v]||v)}})}
+const W=320,H=180,FLOOR=H-8,CEIL=22;
+let state='title',sel=1,unlocked=1,level=1,best={};
+try{unlocked=+localStorage.getItem('sd_unlocked')||1}catch(e){}
+const MAXL=10;
+const target=l=>20+6*(l-1), timeFor=l=>Math.max(35,60-5*(l-1)), speedFor=l=>1.4+0.14*l;
+let star,obs,dust,score,timeLeft,spawnX,tick,endReason,flash=0;
+const bg=[];for(let i=0;i<60;i++)bg.push({x:Math.random()*W,y:Math.random()*H,s:Math.random()<.3?2:1,v:.2+Math.random()*.6});
+function rnd(a,b){return a+Math.random()*(b-a)}
+function start(l){level=l;star={x:60,y:90,vy:0};obs=[];dust=[];score=0;timeLeft=timeFor(l);spawnX=W+20;tick=0;state='play'}
+function flap(){star.vy=Math.max(star.vy-2.2,-4)}
+function addMeteor(x,y,r){obs.push({x,y,r,seed:Math.floor(Math.random()*1000)})}
+function addDust(x,y,f){const t=Math.random();dust.push({x,y,v:f||(t<.2?2:1),got:false})}
+function spawn(){
+  const x=spawnX,l=level,n0=obs.length;
+  const q0=Math.random();const p=q0<.5?'float':q0<.8?'pair':q0<.9?(Math.random()<.5?'low':'high'):'gap';
+  let gy=90;
+  if(p==='float'){const r=rnd(8,13+l*.6);gy=rnd(CEIL+r+10,FLOOR-r-10);addMeteor(x,gy,r);gy=gy+(Math.random()<.5?-1:1)*(r+22)}
+  else if(p==='pair'){const r1=rnd(8,12),r2=rnd(8,12),y1=rnd(CEIL+r1+8,FLOOR-r1-8);let y2=rnd(CEIL+r2+8,FLOOR-r2-8),t=0;while(Math.abs(y2-y1)<r1+r2+28&&t++<20)y2=rnd(CEIL+r2+8,FLOOR-r2-8);addMeteor(x,y1,r1);addMeteor(x+rnd(30,55),y2,r2);gy=(y1+y2)/2}
+  else if(p==='low'){const r=rnd(9,13+l*.8);addMeteor(x,FLOOR-r+3,r);gy=FLOOR-r*2-22}
+  else if(p==='high'){const r=rnd(9,13+l*.8);addMeteor(x,CEIL+r-3,r);gy=CEIL+r*2+22}
+  else if(p==='mid'){const r=rnd(8,12);gy=rnd(60,120);addMeteor(x,gy,r);gy=Math.random()<.5?gy-r-20:gy+r+20}
+  else{const g=Math.max(46,70-l*3);gy=rnd(CEIL+30+g/2,FLOOR-30-g/2);const r1=(gy-g/2-CEIL)/2,r2=(FLOOR-gy-g/2)/2;
+    addMeteor(x,CEIL+r1-4,r1+2);addMeteor(x,FLOOR-r2+4,r2+2)}
+  gy=Math.max(CEIL+8,Math.min(FLOOR-8,gy));
+  const nd=Math.random()<.5?1:2;
+  for(let i=0;i<nd;i++){
+    for(let t=0;t<15;t++){
+      const dx=x+rnd(15,130),dy=rnd(CEIL+12,FLOOR-12);
+      const farM=obs.every(o=>Math.hypot(o.x-dx,o.y-dy)>o.r+24);
+      const farD=dust.every(d=>Math.hypot(d.x-dx,d.y-dy)>34);
+      if(farM&&farD){addDust(dx,dy);break}
+    }
+  }
+  if(Math.random()<.14){const o=obs[n0+Math.floor(Math.random()*(obs.length-n0))];
+    for(let t=0;t<20;t++){const m=Math.floor(Math.random()*4),d=o.r+rnd(13,20);
+      let dx=o.x,dy=o.y;
+      if(m===0)dx-=d;else if(m===1)dx+=d;else if(m===2)dy-=d;else dy+=d;
+      if(dy<CEIL+5||dy>FLOOR-5)continue;
+      if(obs.every(q=>Math.hypot(q.x-dx,q.y-dy)>q.r*.85+10)){addDust(dx,dy,5);break}}}
+  spawnX+=rnd(105,150)-l*4;
+}
+function end(why){endReason=why;flash=12;state=why==='win'?'win':'over';
+  if(why==='win'&&level<MAXL&&unlocked<level+1){unlocked=level+1;try{localStorage.setItem('sd_unlocked',unlocked)}catch(e){}}
+  best[level]=Math.max(best[level]||0,score)}
+function step(){
+  for(const b of bg){b.x-=b.v;if(b.x<0){b.x=W;b.y=Math.random()*H}}
+  if(state!=='play')return;
+  tick++;timeLeft-=1/60;const sp=speedFor(level);
+  star.vy+=0.1;star.y+=star.vy;
+  if(star.y<CEIL){star.y=CEIL;star.vy=0}
+  if(star.y>FLOOR-3){star.y=FLOOR-3;star.vy=0}
+  spawnX-=sp;if(spawnX<W+60)spawn();
+  for(const o of obs){o.x-=sp;if(Math.hypot(o.x-star.x,o.y-star.y)<o.r*.85+2){return end('crash')}}
+  for(const d of dust){d.x-=sp;if(!d.got&&Math.hypot(d.x-star.x,d.y-star.y)<11){d.got=true;score+=d.v}}
+  obs=obs.filter(o=>o.x>-30);dust=dust.filter(d=>d.x>-10&&!d.got);
+  if(score>=target(level))return end('win');
+  if(timeLeft<=0){timeLeft=0;end('time')}
+}
+function txt(s,x,y,size=8,al='center'){ctx.font=Math.max(size*.56,4.4)+'px "Press Start 2P","Courier New",monospace';ctx.textAlign=al;ctx.fillText(s,x,y)}
+function drawStar(x,y,big){const m=big?[[0,-3],[0,-2],[-1,-1],[0,-1],[1,-1],[-3,0],[-2,0],[-1,0],[0,0],[1,0],[2,0],[3,0],[-1,1],[0,1],[1,1],[-2,2],[2,2],[-3,3],[3,3]]:[];
+  for(const [a,b] of m)ctx.fillRect(Math.round(x+a),Math.round(y+b),1,1)}
+function drawMeteor(o){const r=Math.round(o.r);ctx.fillStyle='#fff';
+  for(let j=-r;j<=r;j++){const w=Math.floor(Math.sqrt(r*r-j*j)+((o.seed+j*7)%3===0?-1:0));ctx.fillRect(Math.round(o.x-w),Math.round(o.y+j),w*2+1,1)}
+  ctx.fillStyle='#000';ctx.fillRect(Math.round(o.x-r*.4),Math.round(o.y-r*.3),3,3);ctx.fillRect(Math.round(o.x+r*.2),Math.round(o.y+r*.2),2,2);ctx.fillRect(Math.round(o.x-r*.1),Math.round(o.y+r*.5),2,2)}
+function drawDust(d){const x=Math.round(d.x),y=Math.round(d.y);ctx.fillStyle='#fff';
+  if(d.v===1)ctx.fillRect(x-1,y-1,3,3);
+  else if(d.v===2){ctx.fillRect(x-2,y,5,1);ctx.fillRect(x,y-2,1,5)}
+  else{ctx.fillRect(x-3,y,7,1);ctx.fillRect(x,y-3,1,7);ctx.fillRect(x-1,y-1,3,3);if(tick%20<10){ctx.fillRect(x-3,y-3,1,1);ctx.fillRect(x+3,y+3,1,1);ctx.fillRect(x-3,y+3,1,1);ctx.fillRect(x+3,y-3,1,1)}}}
+function draw(){
+  ctx.setTransform(4,0,0,4,0,0);
+  ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);ctx.fillStyle='#fff';
+  for(const b of bg)ctx.fillRect(Math.floor(b.x),Math.floor(b.y),b.s,b.s);
+  if(state==='title'||state==='select'){
+    txt('STAR DRIFTER',W/2,50,20);
+    ctx.fillRect(W/2-60,58,120,1);
+    if(state==='title'){
+      drawStar(W/2,85,true);ctx.setLineDash([]);
+      txt('Dodge meteors. Collect stardust.',W/2,112,8);
+      txt('Hit the score target before time runs out.',W/2,124,8);
+      if(Math.floor(performance.now()/500)%2)txt('PRESS SPACE TO START',W/2,155,10);
+    } else {
+      txt('SELECT LEVEL  (< >)',W/2,78,9);
+      for(let i=1;i<=MAXL;i++){const x=40+((i-1)%5)*60,y=100+Math.floor((i-1)/5)*30;
+        const ok=i<=unlocked;ctx.fillStyle='#fff';
+        if(i===sel){ctx.fillRect(x-14,y-12,28,22);ctx.fillStyle='#000'}else{ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.strokeRect(x-13.5,y-11.5,27,21)}
+        txt(ok?String(i):'--',x,y+4,10);ctx.fillStyle='#fff'}
+      txt('Target '+target(sel)+' pts in '+Math.round(timeFor(sel))+'s'+(best[sel]?'  Best '+best[sel]:''),W/2,158,8);
+      txt('SPACE = GO   ESC = BACK',W/2,172,7);
+    }
+    return}
+  ctx.fillStyle='#fff';ctx.fillRect(0,FLOOR+4,W,1);ctx.fillRect(0,CEIL-4,W,1);
+  for(const d of dust){ctx.save();ctx.translate(Math.round(d.x),Math.round(d.y));ctx.scale(1.6,1.6);drawDust({v:d.v,x:0,y:0});ctx.restore()}
+  for(const o of obs)drawMeteor(o);
+  ctx.fillStyle='#fff';drawStar(star.x,star.y,true);
+  const tr=state==='play'?3:0;for(let i=1;i<=tr;i++)ctx.fillRect(Math.round(star.x-5-i*3),Math.round(star.y)+(i%2?0:1),2,1);
+  
+  ctx.fillStyle='#000';ctx.fillRect(0,0,W,0);ctx.fillStyle='#fff';
+  txt('LV '+level+'  SCORE '+score+'/'+target(level),8,12,8,'left');
+  txt('TIME '+Math.ceil(timeLeft),W-8,12,8,'right');
+  const bw=100,bx=W/2-bw/2;ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.strokeRect(bx+.5,4.5,bw,7);ctx.fillRect(bx+2,6,Math.min(1,score/target(level))*(bw-3),4);
+  if(state!=='play'){
+    ctx.fillStyle='#000';ctx.fillRect(50,40,220,100);ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.strokeRect(51,41,218,98);ctx.fillStyle='#fff';
+    if(state==='win'){txt('LEVEL UP!',W/2,66,16);txt('Score '+score+'  -  Level '+Math.min(level+1,MAXL)+' unlocked',W/2,84,8);
+      txt(level<MAXL?'SPACE = NEXT LEVEL':'ALL LEVELS CLEARED!',W/2,106,9);txt('R = REPLAY   L = LEVELS   Q = QUIT',W/2,126,7)}
+    else{txt(endReason==='crash'?'GAME OVER':"TIME'S UP",W/2,66,16);
+      txt(endReason==='crash'?'You hit a meteor!':'Target not reached',W/2,82,8);
+      txt('Score '+score+'/'+target(level)+'   Best '+(best[level]||0),W/2,96,8);
+      txt('R = RESTART   L = LEVELS   Q = QUIT',W/2,120,8)}
+  }
+  if(flash>0){ctx.fillStyle='rgba(172,172,172,'+flash/16+')';ctx.fillRect(0,0,W,H);flash--}
+}
+let last=performance.now(),acc=0;
+function loop(t){acc+=Math.min(100,t-last);last=t;while(acc>=1000/60){step();acc-=1000/60}draw();requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+function action(){
+  if(state==='title')state='select';
+  else if(state==='select'){if(sel<=unlocked)start(sel)}
+  else if(state==='play')flap();
+  else if(state==='win'){if(level<MAXL){sel=level+1;start(level+1)}}
+}
+addEventListener('keydown',e=>{
+  const k=e.key.toLowerCase();
+  if(e.code==='Space'||e.key==='ArrowUp'){e.preventDefault();if(!e.repeat)action();return}
+  if(state==='select'){
+    if(e.key==='ArrowRight')sel=Math.min(unlocked,sel+1);
+    else if(e.key==='ArrowLeft')sel=Math.max(1,sel-1);
+    else if(e.key==='Enter')action();
+    else if(e.key==='Escape')state='title'}
+  else if(state==='over'||state==='win'){
+    if(k==='r')start(level);
+    else if(k==='l'){sel=Math.min(level,unlocked);state='select'}
+    else if(k==='q')state='title'}
+});
+cv.addEventListener('pointerdown',e=>{e.preventDefault();action()});
+</script></body></html>
